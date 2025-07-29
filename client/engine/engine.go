@@ -17,10 +17,10 @@ import (
 // Anthropics config
 const (
 	ANTHROPIC_API_KEY = ""
-	MODEL             = shared.ChatModelGPT4
+	MODEL             = shared.ChatModelGPT4o
 )
 
-func OpenAiEngine(messages []dtos.Message, tools []dtos.Tool) ([]map[string]interface{}, string, error) {
+func OpenAiEngine(messages []dtos.Message, tools []dtos.Tool) ([]openai.ChatCompletionMessageToolCallFunction, string, error) {
 	ctx := context.Background()
 	client := openai.NewClient(
 		option.WithAPIKey(ANTHROPIC_API_KEY),
@@ -68,17 +68,13 @@ func OpenAiEngine(messages []dtos.Message, tools []dtos.Tool) ([]map[string]inte
 		fmt.Println(string(pretty))
 	}
 
-	var extractedCalls []map[string]interface{}
+	var extractedCalls []openai.ChatCompletionMessageToolCallFunction
 	for _, toolCall := range resp.Choices[0].Message.ToolCalls {
 		if toolCall.Type == "function" {
-			var args map[string]interface{}
-			if err := json.Unmarshal([]byte(toolCall.Function.Arguments), &args); err != nil {
-				slog.Error("Unmarshal error", "error", err)
-				continue
-			}
-			extractedCalls = append(extractedCalls, map[string]interface{}{
-				"name":      toolCall.Function.Name,
-				"arguments": args,
+
+			extractedCalls = append(extractedCalls, openai.ChatCompletionMessageToolCallFunction{
+				Name:      toolCall.Function.Name,
+				Arguments: toolCall.Function.Arguments,
 			})
 		}
 	}
