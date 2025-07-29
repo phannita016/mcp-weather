@@ -81,43 +81,49 @@ func (a *App) promptLoop(ctx context.Context) error {
 func (a *App) handleQuery(ctx context.Context, query string) error {
 	messages := []dtos.Message{{Role: "user", Content: query}}
 
-	toolCalls, _, err := engine.OpenAiEngine(messages, a.tools)
+	toolCalls, content, err := engine.OpenAiEngine(messages, a.tools)
 	if err != nil {
 		slog.Error("Error generating tool call", "error", err)
 		return err
 	}
 
+	finalResults := []string{}
 	for _, toolCall := range toolCalls {
-		name := toolCall["name"].(string)
-		args := toolCall["arguments"].(map[string]interface{})
+		name := toolCall.Name
+		args := toolCall.Arguments
 
-		fmt.Printf("Calling tool: %s with args: %+v\n", name, args)
+		var parsedArgs map[string]interface{}
+		if err := json.Unmarshal([]byte(args), &parsedArgs); err != nil {
+			slog.Error("Error unmarshaling args", "error", err)
+			return err
+		}
+
+		fmt.Printf("🛠️  Calling tool: name=%s args=%v\n", name, parsedArgs)
 
 		result, err := a.session.CallTool(ctx, &mcp.CallToolParams{
 			Name:      name,
-			Arguments: args,
+			Arguments: parsedArgs,
 		})
 		if err != nil {
 			slog.Error("Error calling tool", "error", err)
 			continue
 		}
 
-		b, err := json.MarshalIndent(result.Content, "", "  ")
-		if err != nil {
-			fmt.Println("Error marshaling result:", err)
-		} else {
-			fmt.Println("Tool result:", string(b))
-			fmt.Println()
+		for _, c := range result.Content {
+			text := c.(*mcp.TextContent).Text
+			finalResults = append(finalResults, text)
 		}
 	}
 
-	if len(toolCalls) == 0 {
-		_, content, err := engine.OpenAiEngine(messages, a.tools)
-		if err != nil {
-			slog.Error("Error getting AI response", "error", err)
-			return err
-		}
-		fmt.Println("Tool result:", content)
+	if content != "" {
+		finalResults = append(finalResults, content)
+	}
+
+	fmt.Println("🎉 Final combined result:")
+	for i, r := range finalResults {
+		fmt.Printf("[Chunk %d]\n", i+1)
+		fmt.Println(r)
+		fmt.Println("------------------------------------------------")
 	}
 
 	return nil
