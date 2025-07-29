@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"weather/server/dtos"
 	"weather/server/nws"
 
@@ -41,16 +42,25 @@ func GetForecast(ctx context.Context, session *mcp.ServerSession, params *mcp.Ca
 		}, nil
 	}
 
-	var result string
+	var forecasts []string
 	for i, period := range forecastData.Properties.Periods {
-		if i >= 5 {
+		if i >= 3 {
 			break
 		}
-		// result += fmt.Sprintf(`%s: || Temperature: %d°%s || Wind: %s %s || Forecast: %s`, period.Name, period.Temperature, period.TemperatureUnit, period.WindSpeed, period.WindDirection, period.DetailedForecast)
-		result += fmt.Sprintf(`%s: Temperature: %d°%s || `, period.Name, period.Temperature, period.TemperatureUnit)
+		forecasts = append(forecasts, formatPeriod(period))
 	}
 
 	return &mcp.CallToolResultFor[any]{
-		Content: []mcp.Content{&mcp.TextContent{Text: result}},
+		Content: []mcp.Content{&mcp.TextContent{Text: strings.Join(forecasts, "\n")}},
 	}, nil
+}
+
+func formatPeriod(period dtos.ForecastPeriod) string {
+	lines := []string{
+		"- " + defaultString(period.Name, "Unknown") + ":",
+		fmt.Sprintf("   Temperature: %d°%s", period.Temperature, defaultString(period.TemperatureUnit, "")),
+		"   Wind: " + defaultString(period.WindSpeed, "") + " " + defaultString(period.WindDirection, ""),
+		"   Forecast: " + defaultString(period.DetailedForecast, "No forecast available"),
+	}
+	return strings.Join(lines, "\n")
 }

@@ -3,7 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
-	"fmt"
+	"strings"
 	"weather/server/dtos"
 	"weather/server/nws"
 
@@ -28,12 +28,30 @@ func GetAlerts(ctx context.Context, session *mcp.ServerSession, params *mcp.Call
 		}, nil
 	}
 
-	var result string
+	var alerts []string
 	for _, f := range data.Features {
-		result += fmt.Sprintf("Event: %s || Area: %s \n---\n", f.AlertProperties.Event, f.AlertProperties.AreaDesc)
+		alerts = append(alerts, formatAlert(f))
 	}
 
 	return &mcp.CallToolResultFor[any]{
-		Content: []mcp.Content{&mcp.TextContent{Text: result}},
+		Content: []mcp.Content{&mcp.TextContent{Text: strings.Join(alerts, "\n")}},
 	}, nil
+}
+
+func formatAlert(f dtos.Feature) string {
+	lines := []string{
+		"Event: " + defaultString(f.AlertProperties.Event, "Unknown"),
+		"Area: " + defaultString(f.AlertProperties.AreaDesc, "Unknown"),
+		"Severity: " + defaultString(f.AlertProperties.Severity, "Unknown"),
+		"Description: " + defaultString(f.AlertProperties.Description, "No description available"),
+		"Instructions: " + defaultString(f.AlertProperties.Instruction, "No specific instructions provided"),
+	}
+	return strings.Join(lines, "\n")
+}
+
+func defaultString(s, fallback string) string {
+	if strings.TrimSpace(s) == "" {
+		return fallback
+	}
+	return s
 }
