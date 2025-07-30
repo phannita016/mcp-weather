@@ -12,13 +12,13 @@ func main() {
 	srv := srv.NewServer()
 
 	// To run with HTTP transport, use this line:
-	// if err := srv.RunHTTP(":8080"); err != nil {
-	// 	slog.Error("failed to start server", "error", err)
-	// }
+	if err := srv.RunHTTP(":8080"); err != nil {
+		slog.Error("failed to start server", "error", err)
+	}
 
 	// To run with stdio transport for command-line usage, comment out the line
 	// above and uncomment the one below:
-	if err := srv.RunStdio(); err != nil {
-		slog.Error("failed to start server", "error", err)
-	}
+	// if err := srv.RunStdio(); err != nil {
+	// 	slog.Error("failed to start server", "error", err)
+	// }
 }

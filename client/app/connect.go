@@ -3,7 +3,6 @@ package app
 import (
 	"context"
 	"fmt"
-	"os/exec"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -11,7 +10,8 @@ import (
 const serverPath = "e:/GOLANG-LAB/MCP/mcp-weather/server/cmd/weather.exe"
 
 func (a *App) Connect() error {
-	transport := mcp.NewCommandTransport(exec.Command(serverPath))
+	// transport := mcp.NewCommandTransport(exec.Command(serverPath))
+	transport := mcp.NewStreamableClientTransport("http://localhost:8080/mcp/stream", &mcp.StreamableClientTransportOptions{})
 	session, err := a.client.Connect(context.Background(), transport)
 	if err != nil {
 		return fmt.Errorf("connect failed: %w", err)

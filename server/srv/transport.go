@@ -4,10 +4,6 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
-	"os"
-	"os/signal"
-	"syscall"
-	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -27,68 +23,71 @@ func (s *Server) RunStdio() error {
 // RunHTTP starts the server and listens for connections on the given HTTP address.
 // It uses Server-Sent Events (SSE) for transport.
 // This is useful for web-based clients.
-func (s *Server) RunHTTP(addr string) error {
-	transport := mcp.NewStreamableServerTransport("")
-	mux := http.NewServeMux()
-	mux.Handle("/mcp/stream", transport)
-
-	httpServer := &http.Server{
-		Addr:    addr,
-		Handler: mux,
-	}
-
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-
-	errChan := make(chan error, 1)
-
-	// Run the MCP server in a separate goroutine to not block the HTTP server.
-	go func() {
-		if err := s.mcpServer.Run(ctx, transport); err != nil {
-			errChan <- err
-		}
-	}()
-
-	// Run the HTTP server in a separate goroutine.
-	go func() {
-		slog.Info("Starting HTTP server", "address", addr)
-		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			errChan <- err
-		}
-	}()
-
-	// Wait for an interrupt signal or an error from one of the goroutines.
-	select {
-	case err := <-errChan:
-		return err
-	case <-ctx.Done():
-		slog.Info("Shutting down server...")
-		// Create a new context for shutdown to allow for a timeout.
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		if err := httpServer.Shutdown(shutdownCtx); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-// func (s *Server) RunHTTP(addr string) {
+// func (s *Server) RunHTTP(addr string) error {
 // 	transport := mcp.NewStreamableServerTransport("")
-// 	http.Handle("/mcp/stream", transport)
+// 	mux := http.NewServeMux()
+// 	mux.Handle("/mcp/stream", transport)
+
+// 	httpServer := &http.Server{
+// 		Addr:    addr,
+// 		Handler: mux,
+// 	}
+
+// 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+// 	defer stop()
+
+// 	errChan := make(chan error, 1)
 
 // 	// Run the MCP server in a separate goroutine to not block the HTTP server.
 // 	go func() {
-// 		if err := s.mcpServer.Run(context.Background(), transport); err != nil {
-// 			slog.Error("MCP server run failed", "error", err)
-// 			os.Exit(1)
+// 		if err := s.mcpServer.Run(ctx, transport); err != nil {
+// 			errChan <- err
 // 		}
 // 	}()
 
-// 	slog.Info("Starting HTTP server", "address", addr)
-// 	if err := http.ListenAndServe(addr, nil); err != nil {
-// 		slog.Error("failed to start HTTP server", "error", err)
-// 		os.Exit(1)
+// 	// Run the HTTP server in a separate goroutine.
+// 	go func() {
+// 		slog.Info("Starting HTTP server", "address", addr)
+// 		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+// 			errChan <- err
+// 		}
+// 	}()
+
+// 	// Wait for an interrupt signal or an error from one of the goroutines.
+// 	select {
+// 	case err := <-errChan:
+// 		return err
+// 	case <-ctx.Done():
+// 		slog.Info("Shutting down server...")
+// 		// Create a new context for shutdown to allow for a timeout.
+// 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+// 		defer cancel()
+// 		if err := httpServer.Shutdown(shutdownCtx); err != nil {
+// 			return err
+// 		}
 // 	}
+
+// 	return nil
 // }
+
+func (s *Server) RunHTTP(addr string) error {
+	transport := mcp.NewStreamableServerTransport("")
+	http.Handle("/mcp/stream", transport)
+
+	// Run the MCP server in a separate goroutine to not block the HTTP server.
+	go func() {
+		if err := s.mcpServer.Run(context.Background(), transport); err != nil {
+			slog.Error("MCP server run failed", "error", err)
+			// os.Exit(1)
+			// return err
+		}
+	}()
+
+	slog.Info("Starting HTTP server", "address", addr)
+	if err := http.ListenAndServe(addr, nil); err != nil {
+		slog.Error("failed to start HTTP server", "error", err)
+		// os.Exit(1)
+		return err
+	}
+	return nil
+}
