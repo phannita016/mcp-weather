@@ -12,8 +12,7 @@ import (
 
 // Anthropics config
 const (
-	ANTHROPIC_API_KEY = ""
-	MODEL             = shared.ChatModelGPT4o
+	MODEL = shared.ChatModelGPT4o
 )
 
 type OpenAIClient struct {

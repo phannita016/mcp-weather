@@ -27,6 +27,10 @@ func NewServer() *Server {
 	return s
 }
 
+func (s *Server) MCP() *mcp.Server {
+	return s.mcpServer
+}
+
 // registerTools registers all the available tools with the MCP server.
 func (s *Server) registerTools() {
 	// Tool: get_alerts

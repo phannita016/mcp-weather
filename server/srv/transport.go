@@ -23,6 +23,28 @@ func (s *Server) RunStdio() error {
 // RunHTTP starts the server and listens for connections on the given HTTP address.
 // It uses Server-Sent Events (SSE) for transport.
 // This is useful for web-based clients.
+func (s *Server) RunHTTP(addr string) error {
+	transport := mcp.NewStreamableServerTransport("")
+	http.Handle("/mcp/stream", transport)
+
+	// Run the MCP server in a separate goroutine to not block the HTTP server.
+	go func() {
+		if err := s.mcpServer.Run(context.Background(), transport); err != nil {
+			slog.Error("MCP server run failed", "error", err)
+			// os.Exit(1)
+			// return err
+		}
+	}()
+
+	slog.Info("Starting HTTP server", "address", addr)
+	if err := http.ListenAndServe(addr, nil); err != nil {
+		slog.Error("failed to start HTTP server", "error", err)
+		// os.Exit(1)
+		return err
+	}
+	return nil
+}
+
 // func (s *Server) RunHTTP(addr string) error {
 // 	transport := mcp.NewStreamableServerTransport("")
 // 	mux := http.NewServeMux()
@@ -69,25 +91,3 @@ func (s *Server) RunStdio() error {
 
 // 	return nil
 // }
-
-func (s *Server) RunHTTP(addr string) error {
-	transport := mcp.NewStreamableServerTransport("")
-	http.Handle("/mcp/stream", transport)
-
-	// Run the MCP server in a separate goroutine to not block the HTTP server.
-	go func() {
-		if err := s.mcpServer.Run(context.Background(), transport); err != nil {
-			slog.Error("MCP server run failed", "error", err)
-			// os.Exit(1)
-			// return err
-		}
-	}()
-
-	slog.Info("Starting HTTP server", "address", addr)
-	if err := http.ListenAndServe(addr, nil); err != nil {
-		slog.Error("failed to start HTTP server", "error", err)
-		// os.Exit(1)
-		return err
-	}
-	return nil
-}

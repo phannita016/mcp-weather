@@ -11,14 +11,14 @@ func main() {
 	// Create a new server instance. Tool registration is now handled within NewServer.
 	srv := srv.NewServer()
 
-	// To run with HTTP transport, use this line:
-	if err := srv.RunHTTP(":8080"); err != nil {
-		slog.Error("failed to start server", "error", err)
-	}
-
 	// To run with stdio transport for command-line usage, comment out the line
 	// above and uncomment the one below:
 	// if err := srv.RunStdio(); err != nil {
 	// 	slog.Error("failed to start server", "error", err)
 	// }
+
+	// To run with HTTP transport, use this line:
+	if err := srv.RunHTTP(":8080"); err != nil {
+		slog.Error("failed to start server", "error", err)
+	}
 }
