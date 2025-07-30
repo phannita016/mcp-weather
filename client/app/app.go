@@ -4,8 +4,6 @@ package app
 import (
 	"context"
 	"fmt"
-	"log/slog"
-	"os"
 	"time"
 	"weather/client/config"
 	"weather/client/dtos"
@@ -17,6 +15,7 @@ import (
 const serverPath = "e:/GOLANG-LAB/MCP/mcp-weather/server/cmd/weather.exe"
 
 type App struct {
+	conf         config.Config
 	client       *mcp.Client
 	session      *mcp.ClientSession
 	tools        []dtos.Tool
@@ -24,37 +23,36 @@ type App struct {
 }
 
 func NewApp(conf config.Config, client *mcp.Client) *App {
-	openAIengine := engine.NewOpenAIClient(conf.Anthropic.APIKey, engine.MODEL)
-
 	return &App{
-		client:       client,
-		openAIEngine: openAIengine,
+		conf:   conf,
+		client: client,
 	}
 }
 
-func (a *App) Connect(ctx context.Context) error {
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+func (a *App) Run() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
+	// Create a command-based transport to run the MCP server as a child process via stdin/stdout
+	// transport := mcp.NewCommandTransport(exec.Command(serverPath))
+
+	// Create a streamable client transport to communicate with the MCP server
 	transport := mcp.NewStreamableClientTransport(
 		"http://localhost:8080/mcp/stream",
 		&mcp.StreamableClientTransportOptions{},
 	)
 
+	// Connect to the server and start a session
 	session, err := a.client.Connect(ctx, transport)
 	if err != nil {
 		return fmt.Errorf("connect failed: %w", err)
 	}
-
 	a.session = session
-	return nil
-}
 
-func (a *App) Run() error {
-	if err := a.Connect(context.Background()); err != nil {
-		slog.Error("failed to connect to server", "error", err)
-		os.Exit(1)
-	}
+	// Initialize OpenAI client using the API key from config
+	openAIengine := engine.NewOpenAIClient(a.conf.Anthropic.APIKey, engine.MODEL)
+	a.openAIEngine = openAIengine
 
+	// Start the main prompt loop
 	return a.StartPromptLoop()
 }
