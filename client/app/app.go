@@ -5,18 +5,25 @@ import (
 	"log/slog"
 	"os"
 	"weather/client/dtos"
+	"weather/client/engine"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 type App struct {
-	client  *mcp.Client
-	session *mcp.ClientSession
-	tools   []dtos.Tool
+	client       *mcp.Client
+	session      *mcp.ClientSession
+	tools        []dtos.Tool
+	openAIEngine *engine.OpenAIClient
 }
 
 func NewApp(client *mcp.Client) *App {
-	return &App{client: client}
+	openAIengine := engine.NewOpenAIClient(engine.ANTHROPIC_API_KEY, engine.MODEL)
+
+	return &App{
+		client:       client,
+		openAIEngine: openAIengine,
+	}
 }
 
 func (a *App) Run() error {

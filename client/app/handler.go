@@ -9,7 +9,6 @@ import (
 	"os"
 	"strings"
 	"weather/client/dtos"
-	"weather/client/engine"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -71,6 +70,10 @@ func (a *App) promptLoop(ctx context.Context) error {
 			break
 		}
 
+		if query == "" {
+			continue
+		}
+
 		if err := a.handleQuery(ctx, query); err != nil {
 			return err
 		}
@@ -81,50 +84,78 @@ func (a *App) promptLoop(ctx context.Context) error {
 func (a *App) handleQuery(ctx context.Context, query string) error {
 	messages := []dtos.Message{{Role: "user", Content: query}}
 
-	toolCalls, content, err := engine.OpenAiEngine(messages, a.tools)
-	if err != nil {
-		slog.Error("Error generating tool call", "error", err)
-		return err
-	}
-
-	finalResults := []string{}
-	for _, toolCall := range toolCalls {
-		name := toolCall.Name
-		args := toolCall.Arguments
-
-		var parsedArgs map[string]interface{}
-		if err := json.Unmarshal([]byte(args), &parsedArgs); err != nil {
-			slog.Error("Error unmarshaling args", "error", err)
+	finalResult := ""
+	for {
+		// Call OpenAI engine with current conversation context
+		completion, err := a.openAIEngine.OpenAiEngine(messages, a.tools)
+		if err != nil {
+			slog.Error("Error generating tool call", "error", err)
 			return err
 		}
+		completionMsg := completion.Choices[0].Message
 
-		fmt.Printf("🛠️  Calling tool: name=%s args=%v\n", name, parsedArgs)
+		// pretty, err := json.MarshalIndent(completion, "", "  ")
+		// if err != nil {
+		// 	slog.Error("Failed to marshal JSON", "error", err)
+		// } else {
+		// 	fmt.Println(string(pretty))
+		// }
 
-		result, err := a.session.CallTool(ctx, &mcp.CallToolParams{
-			Name:      name,
-			Arguments: parsedArgs,
+		// Extract tool call details of type "function" from the assistant's response message
+		toolCalls := a.openAIEngine.ExtractToolCalls(completionMsg.ToolCalls)
+
+		finalResult = completionMsg.Content
+		if len(toolCalls) == 0 {
+			break
+		}
+
+		// Add assistant message that includes the tool calls to the message history.
+		// This preserves the fact that the assistant requested tool usage.
+		messages = append(messages, dtos.Message{
+			Role:      "assistant",
+			Content:   "",
+			ToolCalls: toolCalls,
 		})
-		if err != nil {
-			slog.Error("Error calling tool", "error", err)
-			continue
-		}
 
-		for _, c := range result.Content {
-			text := c.(*mcp.TextContent).Text
-			finalResults = append(finalResults, text)
-		}
-	}
+		// Iterate through each tool call returned by the assistant
+		for _, toolCall := range toolCalls {
+			// Execute the tool with parsed arguments
+			var parsedArgs map[string]interface{}
+			if err := json.Unmarshal([]byte(toolCall.Function.Arguments), &parsedArgs); err != nil {
+				slog.Error("Invalid tool args", "tool", toolCall.Function.Name, "err", err)
+				continue
+			}
 
-	if content != "" {
-		finalResults = append(finalResults, content)
+			fmt.Printf("🛠️  Calling tool: %s args=%v\n", toolCall.Function.Name, parsedArgs)
+
+			// Execute the tool with parsed arguments
+			result, err := a.session.CallTool(ctx, &mcp.CallToolParams{
+				Name:      toolCall.Function.Name,
+				Arguments: parsedArgs,
+			})
+			if err != nil {
+				// messages = append(messages, dtos.Message{
+				// 	Role:       "tool",
+				// 	Content:    fmt.Sprintf("Error: %v", err),
+				// 	ToolCallID: toolCall.ID,
+				// })
+				slog.Error("Error calling tool", "tool", toolCall.Function.Name, "err", err)
+				continue
+			}
+
+			// Add each piece of content returned by the tool to the conversation
+			for _, c := range result.Content {
+				text := c.(*mcp.TextContent).Text
+				messages = append(messages, dtos.Message{
+					Role:       "tool",
+					Content:    text,
+					ToolCallID: toolCall.ID,
+				})
+			}
+		}
 	}
 
 	fmt.Println("🎉 Final combined result:")
-	for i, r := range finalResults {
-		fmt.Printf("[Chunk %d]\n", i+1)
-		fmt.Println(r)
-		fmt.Println("------------------------------------------------")
-	}
-
+	fmt.Println(finalResult)
 	return nil
 }

@@ -1,5 +1,7 @@
 package dtos
 
+import "github.com/openai/openai-go"
+
 type (
 	Tool struct {
 		Name        string         `json:"name"`
@@ -8,12 +10,9 @@ type (
 	}
 
 	Message struct {
-		Role    string      `json:"role"`
-		Content interface{} `json:"content"`
-	}
-
-	Toolcall struct {
-		Name      string                 `json:"name"`
-		Arguments map[string]interface{} `json:"arguments"`
+		Role       string                                 `json:"role"`
+		Content    interface{}                            `json:"content"`
+		ToolCalls  []openai.ChatCompletionMessageToolCall `json:"tool_calls,omitempty"`
+		ToolCallID string                                 `json:"tool_call_id,omitempty"`
 	}
 )
