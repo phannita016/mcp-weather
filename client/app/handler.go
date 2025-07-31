@@ -11,6 +11,9 @@ import (
 	"weather/client/dtos"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/openai/openai-go"
+	"github.com/openai/openai-go/packages/param"
+	"github.com/openai/openai-go/shared"
 )
 
 func (a *App) StartPromptLoop() error {
@@ -36,23 +39,25 @@ func (a *App) loadTools(ctx context.Context) error {
 
 	for _, t := range listTools.Tools {
 		var schemaMap map[string]any
-		if t.InputSchema != nil {
-			b, err := json.Marshal(t.InputSchema)
-			if err == nil {
-				_ = json.Unmarshal(b, &schemaMap)
-			}
+		b, err := json.Marshal(t.InputSchema)
+		if err != nil {
+			return err
 		}
-		a.tools = append(a.tools, dtos.Tool{
-			Name:        t.Name,
-			Description: t.Description,
-			InputSchema: schemaMap,
+		if err := json.Unmarshal(b, &schemaMap); err != nil {
+			return err
+		}
+
+		a.tools = append(a.tools, openai.ChatCompletionToolParam{
+			Function: shared.FunctionDefinitionParam{
+				Name:        t.Name,
+				Description: param.Opt[string]{Value: t.Description},
+				Parameters:  schemaMap,
+			},
+			Type: "function",
 		})
 	}
 
-	fmt.Println("✅ Connected to server with tools:")
-	for _, t := range a.tools {
-		fmt.Println("-", t.Name)
-	}
+	fmt.Println("✅ Connected to server with tools:", len(a.tools))
 	return nil
 }
 
@@ -81,7 +86,25 @@ func (a *App) promptLoop(ctx context.Context) error {
 	return nil
 }
 
+/*
+		handleQuery manages the conversation between the user, the LLM, and external tools.
+		It sends the user query to the LLM, executes any requested tools, updates the conversation,
+		and repeats until no more tool calls are needed.
+		Finally, it outputs the combined response from the LLM.
+
+	  handleQuery Flow:
+	  1. Start with user query as initial message.
+	  2. Send current messages to the LLM.
+	  3. Check if the LLM response includes any ToolCalls.
+	     - If no ToolCalls, finish and output the final result.
+	     - If ToolCalls exist:
+	        a. Append ToolCalls to the conversation messages.
+	        b. Call each tool in order with provided arguments.
+	        c. Append tool responses back to the messages.
+	  4. Repeat from step 2 with updated messages until no more ToolCalls.
+*/
 func (a *App) handleQuery(ctx context.Context, query string) error {
+	// Start conversation with user input
 	messages := []dtos.Message{{Role: "user", Content: query}}
 
 	finalResult := ""
@@ -92,34 +115,27 @@ func (a *App) handleQuery(ctx context.Context, query string) error {
 			slog.Error("Error generating tool call", "error", err)
 			return err
 		}
-		completionMsg := completion.Choices[0].Message
 
-		// pretty, err := json.MarshalIndent(completion, "", "  ")
-		// if err != nil {
-		// 	slog.Error("Failed to marshal JSON", "error", err)
-		// } else {
-		// 	fmt.Println(string(pretty))
-		// }
-
-		// Extract tool call details of type "function" from the assistant's response message
-		toolCalls := a.openAIEngine.ExtractToolCalls(completionMsg.ToolCalls)
-
+		// Extract response content and any tool calls from the model
+		completionMsg := a.chatCompletionMessage(completion.Choices)
+		toolCalls := completionMsg.ToolCalls
 		finalResult = completionMsg.Content
+
+		// Break the loop if there are no tool calls
 		if len(toolCalls) == 0 {
 			break
 		}
 
-		// Add assistant message that includes the tool calls to the message history.
-		// This preserves the fact that the assistant requested tool usage.
+		// Add assistant message with tool calls to the history
 		messages = append(messages, dtos.Message{
 			Role:      "assistant",
 			Content:   "",
 			ToolCalls: toolCalls,
 		})
 
-		// Iterate through each tool call returned by the assistant
+		// Handle each tool call from the assistant
 		for _, toolCall := range toolCalls {
-			// Execute the tool with parsed arguments
+			// Parse arguments from JSON
 			var parsedArgs map[string]interface{}
 			if err := json.Unmarshal([]byte(toolCall.Function.Arguments), &parsedArgs); err != nil {
 				slog.Error("Invalid tool args", "tool", toolCall.Function.Name, "err", err)
@@ -128,22 +144,17 @@ func (a *App) handleQuery(ctx context.Context, query string) error {
 
 			fmt.Printf("🛠️  Calling tool: %s args=%v\n", toolCall.Function.Name, parsedArgs)
 
-			// Execute the tool with parsed arguments
+			// Execute the tool
 			result, err := a.session.CallTool(ctx, &mcp.CallToolParams{
 				Name:      toolCall.Function.Name,
 				Arguments: parsedArgs,
 			})
 			if err != nil {
-				// messages = append(messages, dtos.Message{
-				// 	Role:       "tool",
-				// 	Content:    fmt.Sprintf("Error: %v", err),
-				// 	ToolCallID: toolCall.ID,
-				// })
 				slog.Error("Error calling tool", "tool", toolCall.Function.Name, "err", err)
 				continue
 			}
 
-			// Add each piece of content returned by the tool to the conversation
+			// Add tool result to conversation history
 			for _, c := range result.Content {
 				text := c.(*mcp.TextContent).Text
 				messages = append(messages, dtos.Message{
@@ -155,7 +166,32 @@ func (a *App) handleQuery(ctx context.Context, query string) error {
 		}
 	}
 
-	fmt.Println("🎉 Final combined result:")
+	fmt.Println()
+	fmt.Println("🎉 result:")
 	fmt.Println(finalResult)
 	return nil
+}
+
+func (a *App) chatCompletionMessage(choices []openai.ChatCompletionChoice) openai.ChatCompletionMessage {
+	if len(choices) == 0 {
+		return openai.ChatCompletionMessage{}
+	}
+
+	return openai.ChatCompletionMessage{
+		Content:   choices[0].Message.Content,
+		ToolCalls: choices[0].Message.ToolCalls,
+	}
+
+	// var sb strings.Builder
+	// for _, choice := range choices {
+	// 	if choice.Message.Content != "" {
+	// 		sb.WriteString(choice.Message.Content)
+	// 		sb.WriteString("\n")
+	// 	}
+	// }
+
+	// return openai.ChatCompletionMessage{
+	// 	Content:   sb.String(),
+	// 	ToolCalls: choices[0].Message.ToolCalls,
+	// }
 }
