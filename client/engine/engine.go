@@ -2,7 +2,7 @@ package engine
 
 import (
 	"context"
-	"weather/client/dtos"
+	"fmt"
 
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
@@ -33,7 +33,7 @@ func NewOpenAIClient(apiKey, model string) *OpenAIClient {
 }
 
 // OpenAiEngine sends the provided messages and tools to the OpenAI Chat Completion API.
-func (c *OpenAIClient) OpenAiEngine(messages []dtos.Message, tools []openai.ChatCompletionToolParam) (*openai.ChatCompletion, error) {
+func (c *OpenAIClient) OpenAiEngine(messages []openai.ChatCompletionMessage, tools []openai.ChatCompletionToolParam) (*openai.ChatCompletion, error) {
 	ctx := context.Background()
 
 	// Convert internal message format to OpenAI SDK message format
@@ -72,7 +72,8 @@ Roles used in chat messages:
 Example flow:
 User (role: user) -> Assistant (role: assistant) -> Tool (role: tool) -> Assistant (role: assistant)
 */
-func prepareCompletionMessage(messages []dtos.Message) []openai.ChatCompletionMessageParamUnion {
+func prepareCompletionMessage(messages []openai.ChatCompletionMessage) []openai.ChatCompletionMessageParamUnion {
+	fmt.Println("messages:", len(messages))
 	var openaiMessages []openai.ChatCompletionMessageParamUnion
 	for _, msg := range messages {
 		switch msg.Role {
@@ -116,7 +117,7 @@ func prepareCompletionMessage(messages []dtos.Message) []openai.ChatCompletionMe
 			openaiMessages = append(openaiMessages, openai.ChatCompletionMessageParamUnion{
 				OfTool: &openai.ChatCompletionToolMessageParam{
 					Role:       "tool",
-					ToolCallID: msg.ToolCallID,
+					ToolCallID: msg.ToolCalls[0].ID,
 					Content: openai.ChatCompletionToolMessageParamContentUnion{
 						OfString: param.Opt[string]{Value: msg.Content},
 					},

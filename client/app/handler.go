@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"os"
 	"strings"
-	"weather/client/dtos"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/openai/openai-go"
@@ -113,10 +112,11 @@ func (a *App) promptLoop(ctx context.Context) error {
 	  4. Repeat from step 2 with updated messages until no more ToolCalls.
 */
 func (a *App) handleQuery(ctx context.Context, query string) error {
-	// Start conversation with user input
-	messages := []dtos.Message{{Role: "user", Content: query}}
+	var finalResult string
 
-	finalResult := ""
+	// Start conversation with user input
+	messages := []openai.ChatCompletionMessage{{Role: "user", Content: query}}
+
 	for {
 		// Call OpenAI engine with current conversation context
 		completion, err := a.openAIEngine.OpenAiEngine(messages, a.tools)
@@ -124,7 +124,6 @@ func (a *App) handleQuery(ctx context.Context, query string) error {
 			slog.Error("Error generating tool call", "error", err)
 			return err
 		}
-
 		// Extract response content and any tool calls from the model
 		completionMsg := a.chatCompletionMessage(completion.Choices)
 		toolCalls := completionMsg.ToolCalls
@@ -136,7 +135,7 @@ func (a *App) handleQuery(ctx context.Context, query string) error {
 		}
 
 		// Add assistant message with tool calls to the history
-		messages = append(messages, dtos.Message{
+		messages = append(messages, openai.ChatCompletionMessage{
 			Role:      "assistant",
 			Content:   "",
 			ToolCalls: toolCalls,
@@ -166,10 +165,12 @@ func (a *App) handleQuery(ctx context.Context, query string) error {
 			// Add tool result to conversation history
 			for _, c := range result.Content {
 				text := c.(*mcp.TextContent).Text
-				messages = append(messages, dtos.Message{
-					Role:       "tool",
-					Content:    text,
-					ToolCallID: toolCall.ID,
+				messages = append(messages, openai.ChatCompletionMessage{
+					Role:    "tool",
+					Content: text,
+					ToolCalls: []openai.ChatCompletionMessageToolCall{{
+						ID: toolCall.ID,
+					}},
 				})
 			}
 		}
