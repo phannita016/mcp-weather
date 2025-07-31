@@ -16,6 +16,9 @@ import (
 	"github.com/openai/openai-go/shared"
 )
 
+// StartPromptLoop initializes the session by loading available tools,
+// then starts an interactive prompt loop to handle user queries.
+// It ensures the session is properly closed at the end.
 func (a *App) StartPromptLoop() error {
 	defer a.session.Close()
 	ctx := context.Background()
@@ -31,6 +34,9 @@ func (a *App) StartPromptLoop() error {
 	return nil
 }
 
+// loadTools fetches the list of available tools from the session server,
+// converts their input schemas into a usable format,
+// and registers them for later use in chat completions.
 func (a *App) loadTools(ctx context.Context) error {
 	listTools, err := a.session.ListTools(ctx, &mcp.ListToolsParams{})
 	if err != nil {
@@ -61,6 +67,9 @@ func (a *App) loadTools(ctx context.Context) error {
 	return nil
 }
 
+// promptLoop runs an interactive command-line prompt,
+// reading user input continuously until "quit" is entered,
+// and passing each non-empty query to handleQuery for processing.
 func (a *App) promptLoop(ctx context.Context) error {
 	scanner := bufio.NewScanner(os.Stdin)
 
@@ -172,6 +181,7 @@ func (a *App) handleQuery(ctx context.Context, query string) error {
 	return nil
 }
 
+// chatCompletionMessage extracts the content and tool calls from the first choice.
 func (a *App) chatCompletionMessage(choices []openai.ChatCompletionChoice) openai.ChatCompletionMessage {
 	if len(choices) == 0 {
 		return openai.ChatCompletionMessage{}
