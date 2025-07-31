@@ -12,7 +12,7 @@ import (
 
 // Anthropics config
 const (
-	MODEL = shared.ChatModelGPT4o
+	MODEL = shared.ChatModelGPT4oMini
 )
 
 type OpenAIClient struct {
@@ -33,20 +33,17 @@ func NewOpenAIClient(apiKey, model string) *OpenAIClient {
 }
 
 // OpenAiEngine sends the provided messages and tools to the OpenAI Chat Completion API.
-func (c *OpenAIClient) OpenAiEngine(messages []dtos.Message, tools []dtos.Tool) (*openai.ChatCompletion, error) {
+func (c *OpenAIClient) OpenAiEngine(messages []dtos.Message, tools []openai.ChatCompletionToolParam) (*openai.ChatCompletion, error) {
 	ctx := context.Background()
 
 	// Convert internal message format to OpenAI SDK message format
 	openaiMessages := prepareCompletionMessage(messages)
 
-	// Convert internal tools to OpenAI SDK tools format
-	toolParams := convertCompletionToolParam(tools)
-
 	// Call the OpenAI chat completion API
 	resp, err := c.client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
 		Model:     MODEL,
 		Messages:  openaiMessages,
-		Tools:     toolParams,
+		Tools:     tools,
 		MaxTokens: param.Opt[int64]{Value: 1000},
 	})
 	if err != nil {
@@ -85,7 +82,7 @@ func prepareCompletionMessage(messages []dtos.Message) []openai.ChatCompletionMe
 				OfUser: &openai.ChatCompletionUserMessageParam{
 					Role: "user",
 					Content: openai.ChatCompletionUserMessageParamContentUnion{
-						OfString: param.Opt[string]{Value: msg.Content.(string)},
+						OfString: param.Opt[string]{Value: msg.Content},
 					},
 				},
 			})
@@ -108,7 +105,7 @@ func prepareCompletionMessage(messages []dtos.Message) []openai.ChatCompletionMe
 				OfAssistant: &openai.ChatCompletionAssistantMessageParam{
 					Role: "assistant",
 					Content: openai.ChatCompletionAssistantMessageParamContentUnion{
-						OfString: param.Opt[string]{Value: msg.Content.(string)},
+						OfString: param.Opt[string]{Value: msg.Content},
 					},
 					ToolCalls: toolCalls,
 				},
@@ -121,7 +118,7 @@ func prepareCompletionMessage(messages []dtos.Message) []openai.ChatCompletionMe
 					Role:       "tool",
 					ToolCallID: msg.ToolCallID,
 					Content: openai.ChatCompletionToolMessageParamContentUnion{
-						OfString: param.Opt[string]{Value: msg.Content.(string)},
+						OfString: param.Opt[string]{Value: msg.Content},
 					},
 				},
 			})
@@ -129,39 +126,4 @@ func prepareCompletionMessage(messages []dtos.Message) []openai.ChatCompletionMe
 	}
 
 	return openaiMessages
-}
-
-// convertToolsToOpenAI converts internal tool definitions into
-// OpenAI's tool parameter format to be sent with the request.
-func convertCompletionToolParam(tools []dtos.Tool) []openai.ChatCompletionToolParam {
-	var toolParams []openai.ChatCompletionToolParam
-	for _, t := range tools {
-		toolParams = append(toolParams, openai.ChatCompletionToolParam{
-			Type: "function",
-			Function: shared.FunctionDefinitionParam{
-				Name:        t.Name,
-				Description: param.Opt[string]{Value: t.Description},
-				Parameters:  shared.FunctionParameters(t.InputSchema),
-			},
-		})
-	}
-
-	return toolParams
-}
-
-// extractToolCalls filters and returns only tool calls of type "function"
-func (c *OpenAIClient) ExtractToolCalls(toolCalls []openai.ChatCompletionMessageToolCall) []openai.ChatCompletionMessageToolCall {
-	var extracted []openai.ChatCompletionMessageToolCall
-	for _, tc := range toolCalls {
-		if tc.Type == "function" {
-			extracted = append(extracted, openai.ChatCompletionMessageToolCall{
-				ID: tc.ID,
-				Function: openai.ChatCompletionMessageToolCallFunction{
-					Name:      tc.Function.Name,
-					Arguments: tc.Function.Arguments,
-				},
-			})
-		}
-	}
-	return extracted
 }
