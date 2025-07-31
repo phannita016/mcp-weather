@@ -43,13 +43,10 @@ func (a *App) loadTools(ctx context.Context) error {
 	}
 
 	for _, t := range listTools.Tools {
-		var schemaMap map[string]any
-		b, err := json.Marshal(t.InputSchema)
-		if err != nil {
-			return err
-		}
-		if err := json.Unmarshal(b, &schemaMap); err != nil {
-			return err
+		schemaMap := map[string]any{
+			"type":       t.InputSchema.Type,
+			"properties": t.InputSchema.Properties,
+			"required":   t.InputSchema.Required,
 		}
 
 		a.tools = append(a.tools, openai.ChatCompletionToolParam{
@@ -125,7 +122,7 @@ func (a *App) handleQuery(ctx context.Context, query string) error {
 			return err
 		}
 		// Extract response content and any tool calls from the model
-		completionMsg := a.chatCompletionMessage(completion.Choices)
+		completionMsg := a.groupChatCompletionChoices(completion.Choices)
 		toolCalls := completionMsg.ToolCalls
 		finalResult = completionMsg.Content
 
@@ -143,20 +140,15 @@ func (a *App) handleQuery(ctx context.Context, query string) error {
 
 		// Handle each tool call from the assistant
 		for _, toolCall := range toolCalls {
-			// Parse arguments from JSON
-			var parsedArgs map[string]interface{}
-			if err := json.Unmarshal([]byte(toolCall.Function.Arguments), &parsedArgs); err != nil {
-				slog.Error("Invalid tool args", "tool", toolCall.Function.Name, "err", err)
-				continue
-			}
-
-			fmt.Printf("🛠️  Calling tool: %s args=%v\n", toolCall.Function.Name, parsedArgs)
+			fmt.Printf("🛠️  Calling tool: %s args=%v\n", toolCall.Function.Name, toolCall.Function.Arguments)
 
 			// Execute the tool
-			result, err := a.session.CallTool(ctx, &mcp.CallToolParams{
+			callToolParam := &mcp.CallToolParams{
 				Name:      toolCall.Function.Name,
-				Arguments: parsedArgs,
-			})
+				Arguments: json.RawMessage(toolCall.Function.Arguments),
+			}
+
+			result, err := a.session.CallTool(ctx, callToolParam)
 			if err != nil {
 				slog.Error("Error calling tool", "tool", toolCall.Function.Name, "err", err)
 				continue
@@ -183,7 +175,7 @@ func (a *App) handleQuery(ctx context.Context, query string) error {
 }
 
 // chatCompletionMessage extracts the content and tool calls from the first choice.
-func (a *App) chatCompletionMessage(choices []openai.ChatCompletionChoice) openai.ChatCompletionMessage {
+func (a *App) groupChatCompletionChoices(choices []openai.ChatCompletionChoice) openai.ChatCompletionMessage {
 	if len(choices) == 0 {
 		return openai.ChatCompletionMessage{}
 	}
