@@ -2,6 +2,7 @@ package srv
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 
@@ -42,6 +43,33 @@ func (s *Server) RunHTTP(addr string) error {
 		// os.Exit(1)
 		return err
 	}
+	return nil
+}
+
+// RunSSE starts the SSE server that can handle multiple MCP server instances
+func (s *Server) RunSSE() error {
+	handler := mcp.NewSSEHandler(func(request *http.Request) *mcp.Server {
+		path := request.URL.Path
+		slog.Info("New SSE connection", "path", path)
+
+		// if server, ok := s.servers[path]; ok {
+		// 	return server
+		// }
+
+		slog.Warn("No MCP server registered for path", "path", path)
+		return nil
+	})
+
+	if handler == nil {
+		return fmt.Errorf("failed to create SSE handler")
+	}
+
+	slog.Info("Starting SSE server", "address", ":8080")
+	if err := http.ListenAndServe(":8080", handler); err != nil {
+		slog.Error("Failed to start SSE server", "error", err)
+		return err
+	}
+
 	return nil
 }
 

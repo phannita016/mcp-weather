@@ -2,6 +2,7 @@ package main
 
 import (
 	"log/slog"
+	"os"
 	"weather/server/srv"
 )
 
@@ -20,5 +21,11 @@ func main() {
 	// To run with HTTP transport, use this line:
 	if err := srv.RunHTTP(":8080"); err != nil {
 		slog.Error("failed to start server", "error", err)
+		os.Exit(1)
 	}
+
+	// To run with SSE HTTP transport
+	// if err := srv.RunSSE(); err != nil {
+	// 	os.Exit(1)
+	// }
 }

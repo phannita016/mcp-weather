@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"time"
 	"weather/client/config"
-	"weather/client/dtos"
 	"weather/client/engine"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/openai/openai-go"
 )
 
 const serverPath = "e:/GOLANG-LAB/MCP/mcp-weather/server/cmd/weather.exe"
@@ -18,7 +18,7 @@ type App struct {
 	conf         config.Config
 	client       *mcp.Client
 	session      *mcp.ClientSession
-	tools        []dtos.Tool
+	tools        []openai.ChatCompletionToolParam
 	openAIEngine *engine.OpenAIClient
 }
 
@@ -41,6 +41,9 @@ func (a *App) Run() error {
 		"http://localhost:8080/mcp/stream",
 		&mcp.StreamableClientTransportOptions{},
 	)
+
+	// Use SSE client transport
+	// transport := mcp.NewSSEClientTransport("http://localhost:8080/mcp/streamm", &mcp.SSEClientTransportOptions{})
 
 	// Connect to the server and start a session
 	session, err := a.client.Connect(ctx, transport)
