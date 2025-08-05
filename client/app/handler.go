@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/openai/openai-go"
@@ -19,7 +21,7 @@ import (
 // then starts an interactive prompt loop to handle user queries.
 // It ensures the session is properly closed at the end.
 func (a *App) StartPromptLoop() error {
-	defer a.session.Close()
+	// defer a.session.Close()
 	ctx := context.Background()
 
 	if err := a.loadTools(ctx); err != nil {
@@ -37,26 +39,28 @@ func (a *App) StartPromptLoop() error {
 // converts their input schemas into a usable format,
 // and registers them for later use in chat completions.
 func (a *App) loadTools(ctx context.Context) error {
-	listTools, err := a.session.ListTools(ctx, &mcp.ListToolsParams{})
-	if err != nil {
-		return err
-	}
-
-	for _, t := range listTools.Tools {
-		schemaMap := map[string]any{
-			"type":       t.InputSchema.Type,
-			"properties": t.InputSchema.Properties,
-			"required":   t.InputSchema.Required,
+	for name, session := range a.mcps {
+		listTools, err := session.ListTools(ctx, &mcp.ListToolsParams{})
+		if err != nil {
+			return err
 		}
 
-		a.tools = append(a.tools, openai.ChatCompletionToolParam{
-			Function: shared.FunctionDefinitionParam{
-				Name:        t.Name,
-				Description: param.Opt[string]{Value: t.Description},
-				Parameters:  schemaMap,
-			},
-			Type: "function",
-		})
+		for _, t := range listTools.Tools {
+			schemaMap := map[string]any{
+				"type":       t.InputSchema.Type,
+				"properties": t.InputSchema.Properties,
+				"required":   t.InputSchema.Required,
+			}
+
+			a.tools = append(a.tools, openai.ChatCompletionToolParam{
+				Function: shared.FunctionDefinitionParam{
+					Name:        fmt.Sprintf("%s__%s", name, t.Name),
+					Description: param.Opt[string]{Value: t.Description},
+					Parameters:  schemaMap,
+				},
+				Type: "function",
+			})
+		}
 	}
 
 	fmt.Println("✅ Connected to server with tools:", len(a.tools))
@@ -121,6 +125,7 @@ func (a *App) handleQuery(ctx context.Context, query string) error {
 			slog.Error("Error generating tool call", "error", err)
 			return err
 		}
+
 		// Extract response content and any tool calls from the model
 		completionMsg := a.groupChatCompletionChoices(completion.Choices)
 		toolCalls := completionMsg.ToolCalls
@@ -142,24 +147,41 @@ func (a *App) handleQuery(ctx context.Context, query string) error {
 		for _, toolCall := range toolCalls {
 			fmt.Printf("🛠️  Calling tool: %s args=%v\n", toolCall.Function.Name, toolCall.Function.Arguments)
 
+			parts := strings.SplitN(toolCall.Function.Name, "__", 2)
+			if len(parts) != 2 {
+				slog.Error("Invalid tool name format", "tool", toolCall.Function.Name)
+				continue
+			}
+			sessionName := parts[0]
+
+			session, ok := a.mcps[sessionName]
+			if !ok {
+				slog.Error("Unknown MCP session", "name", toolCall.Function.Name)
+				continue
+			}
+
 			// Execute the tool
 			callToolParam := &mcp.CallToolParams{
-				Name:      toolCall.Function.Name,
+				Name:      parts[1],
 				Arguments: json.RawMessage(toolCall.Function.Arguments),
 			}
 
-			result, err := a.session.CallTool(ctx, callToolParam)
+			result, err := session.CallTool(ctx, callToolParam)
 			if err != nil {
 				slog.Error("Error calling tool", "tool", toolCall.Function.Name, "err", err)
 				continue
 			}
 
-			// Add tool result to conversation history
 			for _, c := range result.Content {
-				text := c.(*mcp.TextContent).Text
+				content, err := ToTypedContents(c)
+				if err != nil {
+					slog.Error("Failed to convert content", "error", err)
+					content = err.Error()
+				}
+
 				messages = append(messages, openai.ChatCompletionMessage{
 					Role:    "tool",
-					Content: text,
+					Content: content,
 					ToolCalls: []openai.ChatCompletionMessageToolCall{{
 						ID: toolCall.ID,
 					}},
@@ -172,6 +194,37 @@ func (a *App) handleQuery(ctx context.Context, query string) error {
 	fmt.Println("🎉 result:")
 	fmt.Println(finalResult)
 	return nil
+}
+
+func ToTypedContents(content mcp.Content) (string, error) {
+	switch v := content.(type) {
+	case *mcp.TextContent:
+		return v.Text, nil
+	case *mcp.ImageContent:
+		url, err := ImageContentToURL(v.Data)
+		if err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("![chart](%s)", url), nil
+	default:
+		return "[Unsupported content type]", nil
+	}
+}
+
+func ImageContentToURL(data []byte) (string, error) {
+	filename := fmt.Sprintf("chart_%d.png", time.Now().Unix())
+
+	if err := os.MkdirAll("./static/images", 0755); err != nil {
+		return "", fmt.Errorf("failed to create directory: %w", err)
+	}
+	url := fmt.Sprintf("http://localhost:8080/images/%s", filename)
+
+	fullPath := filepath.Join("./static/images", filename)
+	if err := os.WriteFile(fullPath, data, 0644); err != nil {
+		return "", fmt.Errorf("failed to write file: %w", err)
+	}
+
+	return url, nil
 }
 
 // chatCompletionMessage extracts the content and tool calls from the first choice.
