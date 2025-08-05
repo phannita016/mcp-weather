@@ -4,6 +4,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"os/exec"
 	"time"
 	"weather/client/config"
 	"weather/client/engine"
@@ -17,9 +18,9 @@ const serverPath = "e:/GOLANG-LAB/MCP/mcp-weather/server/cmd/weather.exe"
 type App struct {
 	conf         config.Config
 	client       *mcp.Client
-	session      *mcp.ClientSession
-	tools        []openai.ChatCompletionToolParam
 	openAIEngine *engine.OpenAIClient
+	mcps         map[string]*mcp.ClientSession
+	tools        []openai.ChatCompletionToolParam
 }
 
 func NewApp(conf config.Config, client *mcp.Client) *App {
@@ -33,24 +34,33 @@ func (a *App) Run() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
+	// Use SSE client transport
+	// transport := mcp.NewSSEClientTransport("http://localhost:8080/mcp/stream", &mcp.SSEClientTransportOptions{})
+
 	// Create a command-based transport to run the MCP server as a child process via stdin/stdout
-	// transport := mcp.NewCommandTransport(exec.Command(serverPath))
+	cmd := exec.Command("npx", "-y", "mcp-echarts")
+	echartsTransport := mcp.NewCommandTransport(cmd)
+
+	echartsSession, err := a.client.Connect(ctx, echartsTransport)
+	if err != nil {
+		return fmt.Errorf("connect failed: %w", err)
+	}
 
 	// Create a streamable client transport to communicate with the MCP server
-	transport := mcp.NewStreamableClientTransport(
+	waetherTransport := mcp.NewStreamableClientTransport(
 		"http://localhost:8080/mcp/stream",
 		&mcp.StreamableClientTransportOptions{},
 	)
 
-	// Use SSE client transport
-	// transport := mcp.NewSSEClientTransport("http://localhost:8080/mcp/streamm", &mcp.SSEClientTransportOptions{})
-
-	// Connect to the server and start a session
-	session, err := a.client.Connect(ctx, transport)
+	weatherSession, err := a.client.Connect(ctx, waetherTransport)
 	if err != nil {
 		return fmt.Errorf("connect failed: %w", err)
 	}
-	a.session = session
+
+	a.mcps = map[string]*mcp.ClientSession{
+		"echarts": echartsSession,
+		"weather": weatherSession,
+	}
 
 	// Initialize OpenAI client using the API key from config
 	openAIengine := engine.NewOpenAIClient(a.conf.Anthropic.APIKey, engine.MODEL)

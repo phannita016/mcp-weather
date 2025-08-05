@@ -2,7 +2,6 @@ package engine
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
@@ -11,9 +10,7 @@ import (
 )
 
 // Anthropics config
-const (
-	MODEL = shared.ChatModelGPT4oMini
-)
+const MODEL = shared.ChatModelGPT4oMini
 
 type OpenAIClient struct {
 	client *openai.Client
@@ -73,7 +70,6 @@ Example flow:
 User (role: user) -> Assistant (role: assistant) -> Tool (role: tool) -> Assistant (role: assistant)
 */
 func prepareCompletionMessage(messages []openai.ChatCompletionMessage) []openai.ChatCompletionMessageParamUnion {
-	fmt.Println("messages:", len(messages))
 	var openaiMessages []openai.ChatCompletionMessageParamUnion
 	for _, msg := range messages {
 		switch msg.Role {
@@ -125,6 +121,5 @@ func prepareCompletionMessage(messages []openai.ChatCompletionMessage) []openai.
 			})
 		}
 	}
-
 	return openaiMessages
 }

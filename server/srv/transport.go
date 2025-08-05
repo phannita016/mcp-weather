@@ -27,6 +27,7 @@ func (s *Server) RunStdio() error {
 func (s *Server) RunHTTP(addr string) error {
 	transport := mcp.NewStreamableServerTransport("")
 	http.Handle("/mcp/stream", transport)
+	// http.Handle("/images/", http.StripPrefix("/images/", http.FileServer(http.Dir("./static/images"))))
 
 	// Run the MCP server in a separate goroutine to not block the HTTP server.
 	go func() {
@@ -48,16 +49,24 @@ func (s *Server) RunHTTP(addr string) error {
 
 // RunSSE starts the SSE server that can handle multiple MCP server instances
 func (s *Server) RunSSE() error {
-	handler := mcp.NewSSEHandler(func(request *http.Request) *mcp.Server {
-		path := request.URL.Path
-		slog.Info("New SSE connection", "path", path)
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := r.URL.Path
 
-		// if server, ok := s.servers[path]; ok {
-		// 	return server
-		// }
+		if path != "/mcp/stream" {
+			slog.Warn("No MCP server registered for path", "path", path)
+			http.Error(w, "invalid MCP path", http.StatusNotFound)
+			return
+		}
 
-		slog.Warn("No MCP server registered for path", "path", path)
-		return nil
+		sseHandler := mcp.NewSSEHandler(func(request *http.Request) *mcp.Server {
+			slog.Info("New MCP connection", "path", path)
+			return s.MCP()
+		})
+
+		sseT := mcp.NewSSEServerTransport("/mcp/stream", nil)
+		sseT.ServeHTTP(w, r)
+
+		sseHandler.ServeHTTP(w, r)
 	})
 
 	if handler == nil {
